@@ -14,13 +14,13 @@
 
 #include "BLEDevice.h"
 
-//#define DEBUG
+#define DEBUG
 
 static BLEUUID serviceUUID_t("00002234-B38D-4985-720E-0F993A68EE41");
 static BLEUUID    charUUID_t("00002235-B38D-4985-720E-0F993A68EE41");
 static BLEUUID serviceUUID_rh("00001234-B38D-4985-720E-0F993A68EE41");
 static BLEUUID    charUUID_rh("00001235-B38D-4985-720E-0F993A68EE41");
-static BLEUUID serviceUUID_bat("0x180F");
+static BLEUUID serviceUUID_bat("0000180F-0000-1000-8000-00805f9b34fb");
 static BLEUUID    charUUID_bat("00002a19-0000-1000-8000-00805f9b34fb");
 
 
@@ -29,6 +29,7 @@ static boolean connected = false;
 static boolean doScan = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic_t;
 static BLERemoteCharacteristic* pRemoteCharacteristic_rh;
+static BLERemoteCharacteristic* pRemoteCharacteristic_bat;
 static BLEAdvertisedDevice* myDevice;
 
 float t, rh, bat;
@@ -75,6 +76,23 @@ static void notifyCallback_rh(
     u.b[2] = pData[2];
     u.b[3] = pData[3];
     Serial.print(u.fval);
+    Serial.print("\t");    
+}
+
+
+static void notifyCallback_bat(
+  BLERemoteCharacteristic* pBLERemoteCharacteristic,
+  uint8_t* pData,
+  size_t length,
+  bool isNotify) {
+    #ifdef DEBUG
+      Serial.print("Notify callback for characteristic ");
+      Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
+      Serial.print(" of data length ");
+      Serial.println(length);
+    #endif
+    
+    Serial.print(pData[0]);
     Serial.print("\t");    
 }
 
@@ -137,7 +155,21 @@ bool connectToServer() {
     #ifdef DEBUG
       Serial.println(" - Found our rh service");
     #endif
-
+    
+    BLERemoteService* pRemoteService_bat = pClient->getService(serviceUUID_bat);
+    if (pRemoteService_bat == nullptr) {
+      #ifdef DEBUG
+        Serial.print("Failed to find our service UUID: ");
+        Serial.println(serviceUUID_bat.toString().c_str());
+      #endif
+      
+      pClient->disconnect();
+      return false;
+    }
+    #ifdef DEBUG
+      Serial.println(" - Found our bat service");
+    #endif
+    
     // Obtain a reference to the characteristic in the service of the remote BLE server.
     pRemoteCharacteristic_t = pRemoteService_t->getCharacteristic(charUUID_t);
     if (pRemoteCharacteristic_t == nullptr) {
@@ -166,19 +198,36 @@ bool connectToServer() {
       Serial.println(" - Found our T characteristic");
     #endif   
 
+    // Obtain a reference to the characteristic in the service of the remote BLE server.
+    pRemoteCharacteristic_bat = pRemoteService_bat->getCharacteristic(charUUID_bat);
+    if (pRemoteCharacteristic_bat == nullptr) {
+      #ifdef DEBUG
+        Serial.print("Failed to find our characteristic UUID: ");
+        Serial.println(charUUID_bat.toString().c_str());
+      #endif
+      pClient->disconnect();
+      return false;
+    }
+    #ifdef DEBUG
+      Serial.println(" - Found our T characteristic");
+    #endif 
+    
     #ifdef DEBUG
       // Read the value of the characteristic.
       if(pRemoteCharacteristic_t->canRead()) {
         std::string value = pRemoteCharacteristic_t->readValue();
         Serial.print("The characteristic value was: ");
-        Serial.println(value.c_str());
         
         u.b[0] = value[0];
         u.b[1] = value[1];
         u.b[2] = value[2];
-        u.b[3] = value[3];
-        
+        u.b[3] = value[3];        
         Serial.print(u.fval);
+      }
+      if(pRemoteCharacteristic_bat->canRead()) {
+        std::string value = pRemoteCharacteristic_bat->readValue();
+        Serial.print("The characteristic value was: ");
+        Serial.println((int16_t)value[0]);
       }
     #endif
 
@@ -186,6 +235,8 @@ bool connectToServer() {
       pRemoteCharacteristic_t->registerForNotify(notifyCallback_t);
     if(pRemoteCharacteristic_rh->canNotify())
       pRemoteCharacteristic_rh->registerForNotify(notifyCallback_rh);
+    if(pRemoteCharacteristic_bat->canNotify())
+      pRemoteCharacteristic_bat->registerForNotify(notifyCallback_bat);
 
     connected = true;
 }
